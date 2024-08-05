@@ -120,7 +120,10 @@ summary_dataframe <- group_by(processed_race_data, race_number, Lane, Country) %
   mutate(total_time_sec = round(as.numeric(total_time),3)) %>% 
   group_by(race_number) %>% 
   mutate(race_rank = rank(total_time_sec),
-         race_winning_time = min(total_time_sec, na.rm = T))
+         race_winning_time = min(total_time_sec, na.rm = T)) %>% 
+  ungroup() %>% 
+  mutate(Date = competition_date,
+         Event = competition_name)
 
 
 
