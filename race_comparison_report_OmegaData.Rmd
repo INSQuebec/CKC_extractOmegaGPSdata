@@ -1,0 +1,51 @@
+---
+title: "Race Comparison Report"
+output: html_document
+params:
+  race_ID: !r race_ID
+  boat_class: !r boat_class
+  phase: !r phase
+  race_summary_data: !r race_summary_data
+  race_splits_data: !r race_splits_data
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(kableExtra)
+library(knitr)
+```
+
+# Race `r params$race_ID`: `r params$boat_class` `r unique(params$race_summary_data$Distance)`\ m `r params$phase`
+
+### Race Summary Table
+
+```{r summary, fig.width=8}
+summary_data <- params$race_summary_data %>% 
+  mutate(total_time = str_remove(as.character(hms::hms(seconds = total_time_sec)), "^00:")) %>%
+  select(c(race_rank, Lane, Country, max_vel, max_SR, avg_vel, avg_SR, avg_DPS, total_time, diff_to_winner_sec)) %>% 
+  arrange(race_rank)
+
+kable(summary_data, digits = c(0,0,0,1,0,2,0,2,3,3), align = "ccccccccc", format = "html",
+      col.names = c("Rank", "Lane", "Country", "Peak Vel", "Peak SR", "Avg Vel", "Avg SR", "Avg DPS", "Time", "Diff. (sec)")) %>% 
+  kableExtra::kable_material()
+```
+
+
+### Race Profile Plots (Velocity, SR and DPS)
+
+```{r raceprofiles, fig.width=9}
+hchart(params$race_splits_data, type = "spline", hcaes(x=split_distance, y = split_velocity, group = Country))
+
+hchart(params$race_splits_data, type = "spline", hcaes(x=split_distance, y = split_SR, group = Country))
+
+hchart(params$race_splits_data, type = "spline", hcaes(x=split_distance, y = split_DPS, group = Country))
+```
+
+
+### Race Evolution Plots
+
+```{r race_evolution, fig.width=9}
+hchart(params$race_splits_data, type = "spline", hcaes(x=split_distance, y = position_to_leader_sec, group = Country))
+
+hchart(params$race_splits_data, type = "spline", hcaes(x=split_distance, y = position_to_leader_meters, group = Country))
+```
