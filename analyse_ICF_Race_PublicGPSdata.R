@@ -90,8 +90,8 @@ getSplitsTable <- function(race_GPS_data){
 
 # Input Competition Name and date (change manually before running script)
 competition_name <- "Tokyo Olympics"
-competition_date <- "2021-08-07"
-directory <- "C:/Users/sgaudet/Downloads/gps_files_tokyo_2020_csp_210807/" 
+competition_date <- "2021-08-06"
+directory <- "C:/Users/sgaudet/Downloads/gps_files_tokyo_2020_csp_210806/" 
 
 files <- dir(directory, full.names = T)
 
@@ -117,7 +117,10 @@ summary_dataframe <- group_by(processed_race_data, race_number, Lane, Country) %
             total_time = last(Time)) %>% 
   mutate_all(.funs = function(x){
     case_when(x %in% c(Inf, -Inf, "NaN") ~ NA, TRUE ~ x)}) %>% 
-  mutate(total_time_sec = round(as.numeric(total_time),3))
+  mutate(total_time_sec = round(as.numeric(total_time),3)) %>% 
+  group_by(race_number) %>% 
+  mutate(race_rank = rank(total_time_sec),
+         race_winning_time = min(total_time_sec, na.rm = T))
 
 
 
