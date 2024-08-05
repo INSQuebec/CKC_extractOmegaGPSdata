@@ -90,8 +90,8 @@ getSplitsTable <- function(race_GPS_data){
 
 # Input Competition Name and date (change manually before running script)
 competition_name <- "Tokyo Olympics"
-competition_date <- "2021-08-07"
-directory <- "C:/Users/sgaudet/Downloads/gps_files_tokyo_2020_csp_210807/" 
+competition_date <- "2021-08-02"
+directory <- "C:/Users/sgaudet/Downloads/gps_files_tokyo_2020_csp_210802/" 
 
 files <- dir(directory, full.names = T, pattern = ".*\\.csv")
 
