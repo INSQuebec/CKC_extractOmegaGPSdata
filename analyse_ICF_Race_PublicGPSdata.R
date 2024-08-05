@@ -57,7 +57,7 @@ getSplitsTable <- function(race_GPS_data){
   race_distance <- max(race_GPS_data$Distance, na.rm = T)
   
   if(race_distance == 200){
-    splits <- group_by(processed_race_data, race_number, Lane, Country, split10) %>% 
+    splits <- group_by(race_GPS_data, race_number, Lane, Country, split10) %>% 
       summarise(split_cumtime = max(Time),
                 split_SR = round(mean(SR, na.rm = T),0),
                 split_DPS = round(mean(DPS, na.rm = T),2)) %>% 
@@ -69,7 +69,7 @@ getSplitsTable <- function(race_GPS_data){
         case_when(x %in% c(Inf, -Inf, "NaN") ~ NA, TRUE ~ x)}) %>% 
       select(race_number, Lane, Country, split_distance, split_time, split_cumtime, split_velocity, split_SR, split_DPS)
   } else {
-    splits <- group_by(processed_race_data, race_number, Lane, Country, split50) %>% 
+    splits <- group_by(race_GPS_data, race_number, Lane, Country, split50) %>% 
       summarise(split_cumtime = max(Time),
                 split_SR = round(mean(SR, na.rm = T),0),
                 split_DPS = round(mean(DPS, na.rm = T),2)) %>% 
@@ -90,10 +90,10 @@ getSplitsTable <- function(race_GPS_data){
 
 # Input Competition Name and date (change manually before running script)
 competition_name <- "Tokyo Olympics"
-competition_date <- "2021-08-06"
-directory <- "C:/Users/sgaudet/Downloads/gps_files_tokyo_2020_csp_210806/" 
+competition_date <- "2021-08-07"
+directory <- "C:/Users/sgaudet/Downloads/gps_files_tokyo_2020_csp_210807/" 
 
-files <- dir(directory, full.names = T)
+files <- dir(directory, full.names = T, pattern = ".*\\.csv")
 
 # Process GPS files
 processed_race_data <- lapply(files, extractOmegaGPSData) %>% 
