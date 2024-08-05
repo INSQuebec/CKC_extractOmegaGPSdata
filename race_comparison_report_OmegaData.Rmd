@@ -22,11 +22,12 @@ library(knitr)
 ```{r summary, fig.width=8}
 summary_data <- params$race_summary_data %>% 
   mutate(total_time = str_remove(as.character(hms::hms(seconds = total_time_sec)), "^00:")) %>%
-  select(c(race_rank, Lane, Country, max_vel, max_SR, avg_vel, avg_SR, avg_DPS, total_time, diff_to_winner_sec)) %>% 
+  select(c(race_rank, race_number, Lane, Country, max_vel, max_SR, avg_vel, avg_SR, avg_DPS, total_time, diff_to_winner_sec)) %>% 
+  unite(col = "Lane", race_number, Lane, sep = " - ") %>% 
   arrange(race_rank)
 
 kable(summary_data, digits = c(0,0,0,1,0,2,0,2,3,3), align = "ccccccccc", format = "html",
-      col.names = c("Rank", "Lane", "Country", "Peak Vel", "Peak SR", "Avg Vel", "Avg SR", "Avg DPS", "Time", "Diff. (sec)")) %>% 
+      col.names = c("Rank", "Race# - Lane", "Country", "Peak Vel", "Peak SR", "Avg Vel", "Avg SR", "Avg DPS", "Time", "Diff. (sec)")) %>% 
   kableExtra::kable_material()
 ```
 
