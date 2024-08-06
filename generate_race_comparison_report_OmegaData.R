@@ -7,15 +7,15 @@ library(ggformula)
 
 ########### Define Params for the report ##########
 
-race_ID <- c("0118") # Input the race_number to filter the databases, string
-boat_class <- "MK4" # Enter the boat class of the race, for example "MK4", "WC2", "MC1", etc.
-phase <- "SF-2" # Name of the phase, for example "SF-1", "FA"
+race_ID <- c("0011") # Input the race_number to filter the databases, string
+boat_class <- "MK2" # Enter the boat class of the race, for example "MK4", "WC2", "MC1", etc.
+phase <- "Heat-3" # Name of the phase, for example "SF-1", "FA"
 
 ############# #####################################
 
 # Load database
-directory <- "C:/Users/sgaudet/Downloads/gps_files_tokyo_2020_csp_210807/"
-race_df_suffixe <- "Tokyo Olympics_2021-08-07"
+directory <- "C:/Users/sgaudet/Downloads/Paris2024_GPSfiles/"
+race_df_suffixe <- "Paris Olympics_2024-08-06"
 
 summary_data <- read_csv(paste0(directory, "summaryDataframe_", race_df_suffixe, ".csv"))
 
@@ -48,7 +48,7 @@ parameters <- list(race_ID = race_ID,
 # Render Rmd template
 RendermyREPORT <- function(parameters = list()){
   rmarkdown::render(input = "race_comparison_report_OmegaData.Rmd",
-                    output_file = paste0(directory, race_df_suffixe, "_",  boat_class, "_", phase, ".html"),
+                    output_file = paste0(directory, "Reports/", race_df_suffixe, "_",  boat_class, "_", phase, ".html"),
                     output_format = "all",
                     params = parameters,
                     encoding = "UTF-8", clean = T)
