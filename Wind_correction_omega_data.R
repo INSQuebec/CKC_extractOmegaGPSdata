@@ -48,6 +48,28 @@ extractOmegaGPSData <- function(filename){
   
 }
 
+#' Function to extract data from wind meter file
+#' 
+#' @param wind_file filepath of the txt file
+#' @param start_time time wind device turned on
+#'
+#' 
+extractWindData <- function(wind_file, start_time){
+
+#Read wind data
+wind_data <- read.table(wind_file, sep = ",", skip = 9) %>% 
+  select(!V1) %>% #Remove first column
+  rename(Dir = V2, Speed = V3, CDir = V4, CSpeed = V5, GPSLocation = V6, DateTime = V7) %>% #Rename columns
+  separate("DateTime", c("Date", "Time"), sep = "T", remove=F) %>% # Separate date and time into two columns and split at location of "T", keep original column
+  mutate(Date = as_datetime(Date, format = "%Y-%m-%d")) %>%  #Change date format
+  mutate(DateTime = as_datetime(str_replace(DateTime, "T"," "),format = "%Y-%m-%d %H:%M:%OS")) %>%  #Change datetime format
+  mutate(Time = as_hms(DateTime)) %>% #Change time data to hms format
+  drop_na(Time) %>% 
+  mutate(Time_adj = as_hms(Time + as_hms(as_hms(start_time) - Time[1])),
+         EW_Vector = sin(DegToRad(Dir))*Speed,
+         NW_Vector = cos(DegToRad(Dir))*Speed)
+
+}
 
 
 
@@ -278,6 +300,23 @@ getSplitsTable <- function(race_GPS_data){
 
 # Load data 
 
+# Load CKC correction factors for each discipline
+cor_factor_C1 <- read_xlsx("CKC Correction Factors.xlsx", "C1 Detail chart", col_names=F) %>% 
+  select(...1 | where(~!any(is.na(.))))
+cor_factor_C2 <- read_xlsx("CKC Correction Factors.xlsx", "C2 Detail chart", col_names=F)%>% 
+  select(...1 | where(~!any(is.na(.))))
+
+cor_factor_K1 <- read_xlsx("CKC Correction Factors.xlsx", "K1 Detail chart", col_names=F)%>% 
+  select(...1 | where(~!any(is.na(.))))
+cor_factor_K2 <- read_xlsx("CKC Correction Factors.xlsx", "K2 Detail chart", col_names=F)%>% 
+  select(...1 | where(~!any(is.na(.))))
+cor_factor_K4 <- read_xlsx("CKC Correction Factors.xlsx", "K4 Detail chart", col_names=F)%>% 
+  select(...1 | where(~!any(is.na(.))))
+
+# Prompt user to enter water temp
+# water_temp <- readline(prompt = "Enter water temperature in degrees celcius (e.g. 21.5): ")
+
+
 # Input Competition Name and date (change manually before running script)
 competition_name <- "Paris2024_Olympics"
 competition_date <- "2024-08-06"
@@ -289,6 +328,15 @@ files <- Sys.glob(paste0(directory, "*/*.csv"))
 processed_race_data <- lapply(files, extractOmegaGPSData) %>% 
   bind_rows()
 
+# Input wind device start time and wind file path
+start_time <- "9:29:00"
+wind_file <- "C:/Users/alex/Dropbox/MTL Admos and Spin Files/Wind data/Wind WCup May 12 929 start 1458 end.txt"
+
+#Add fractional seconds to start time if user does not
+if (!grepl("\\.",start_time)) {start_time = paste0(start_time,".0")}
+
+
+wind_data <- extractWindData(wind_file, start_time)
 
 # Summarise race data by 10m or 50m splits
 
