@@ -13,6 +13,13 @@ params:
 knitr::opts_chunk$set(echo = FALSE)
 library(kableExtra)
 library(knitr)
+library(htmltools)
+```
+
+```{r}
+img(src = knitr::image_uri("logo3.png"), 
+               alt = 'logo', 
+               style = 'position:absolute; top:0; right:0; padding:10px; width:300px')
 ```
 
 # Race `r params$race_ID`: `r params$boat_class` `r unique(params$race_summary_data$Distance)`\ m `r params$phase`
