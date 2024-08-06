@@ -13,7 +13,7 @@ library(DescTools)
 #' 
 extractOmegaGPSData <- function(filename){
   print(paste("processing file:", filename))
-  race_number <- str_remove(filename, directory) %>% 
+  race_number <- str_remove(filename, paste0(directory, ".*/")) %>% 
     str_remove(., ".csv")
   
   race_data <- read_delim(filename,
@@ -89,11 +89,12 @@ getSplitsTable <- function(race_GPS_data){
 # Load data 
 
 # Input Competition Name and date (change manually before running script)
-competition_name <- "Tokyo Olympics"
-competition_date <- "2021-08-02"
-directory <- "C:/Users/sgaudet/Downloads/gps_files_tokyo_2020_csp_210802/" 
+competition_name <- "Paris2024 Olympics"
+competition_date <- "2024-08-06"
+directory <- "C:/Users/sgaudet/Downloads/Paris2024_GPSfiles/"
+# discipline_folder <- Sys.glob(paste0(directory, "/*/*.csv"))
 
-files <- dir(directory, full.names = T, pattern = ".*\\.csv")
+files <- Sys.glob(paste0(directory, "*/*.csv"))
 
 # Process GPS files
 processed_race_data <- lapply(files, extractOmegaGPSData) %>% 
@@ -127,6 +128,6 @@ summary_dataframe <- group_by(processed_race_data, race_number, Lane, Country) %
 
 
 
-write_csv(splits_dataframe, paste0(directory, "splitsDataframe_", competition_name, "_", competition_date, ".csv"))
-write_csv(summary_dataframe, paste0(directory,"summaryDataframe_", competition_name, "_", competition_date, ".csv"))
+write_csv(splits_dataframe, paste0(directory, "splitsDataframe_", competition_name, ".csv"), append = F)
+write_csv(summary_dataframe, paste0(directory,"summaryDataframe_", competition_name, ".csv"), append = F)
 
