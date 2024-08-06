@@ -92,7 +92,6 @@ getSplitsTable <- function(race_GPS_data){
 competition_name <- "Paris2024 Olympics"
 competition_date <- "2024-08-06"
 directory <- "C:/Users/sgaudet/Downloads/Paris2024_GPSfiles/"
-# discipline_folder <- Sys.glob(paste0(directory, "/*/*.csv"))
 
 files <- Sys.glob(paste0(directory, "*/*.csv"))
 
