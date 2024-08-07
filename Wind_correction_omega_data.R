@@ -3,6 +3,7 @@ library(tidyverse)
 library(lubridate)
 library(hms)
 library(DescTools)
+library(readxl)
 
 # Helper functions --------------------------------------------------------
 
@@ -50,25 +51,30 @@ extractOmegaGPSData <- function(filename){
 
 #' Function to extract data from wind meter file
 #' 
-#' @param wind_file filepath of the txt file
-#' @param start_time time wind device turned on
+#' @param wind_file wind data txt file
+#' @param params race parameters
 #'
 #' 
-extractWindData <- function(wind_file, start_time){
-
-#Read wind data
-wind_data <- read.table(wind_file, sep = ",", skip = 9) %>% 
-  select(!V1) %>% #Remove first column
-  rename(Dir = V2, Speed = V3, CDir = V4, CSpeed = V5, GPSLocation = V6, DateTime = V7) %>% #Rename columns
-  separate("DateTime", c("Date", "Time"), sep = "T", remove=F) %>% # Separate date and time into two columns and split at location of "T", keep original column
-  mutate(Date = as_datetime(Date, format = "%Y-%m-%d")) %>%  #Change date format
-  mutate(DateTime = as_datetime(str_replace(DateTime, "T"," "),format = "%Y-%m-%d %H:%M:%OS")) %>%  #Change datetime format
-  mutate(Time = as_hms(DateTime)) %>% #Change time data to hms format
-  drop_na(Time) %>% 
-  mutate(Time_adj = as_hms(Time + as_hms(as_hms(start_time) - Time[1])),
-         EW_Vector = sin(DegToRad(Dir))*Speed,
-         NS_Vector = cos(DegToRad(Dir))*Speed)
-
+#'
+extractWindData <- function(wind_file, params){
+  print(paste("processing wind file:", wind_file))
+  
+  wind_start <- params %>% select(Date, Wind_station_turned_on_time)
+  #Read wind data
+  wind_data <- read.table(wind_file, sep = ",", skip = 9, na.strings=c(""," ","NA")) %>% 
+    select(!V1) %>% #Remove first column
+    rename(Dir = V2, Speed = V3, CDir = V4, CSpeed = V5, GPSLocation = V6, DateTime = V7) %>% #Rename columns
+    drop_na(DateTime, V8, V9) %>% 
+    separate("DateTime", c("Date", "Time"), sep = "T") %>% # Separate date and time into two columns and split at location of "T", keep original column
+    mutate(Date = as.Date(Date),
+           Time = as_hms(Time)) %>% 
+    left_join(wind_start, by = "Date", relationship = "many-to-many") %>%
+    rename(On_time = Wind_station_turned_on_time) %>% 
+    mutate(On_time = case_when(!grepl("\\.",On_time) ~ as_hms(paste0(On_time,".0")),.default = On_time)) %>% 
+    mutate(Time_adj = as_hms(Time + as_hms(On_time - Time[1])),
+           EW_Vector = sin(DegToRad(Dir))*Speed,
+           NS_Vector = cos(DegToRad(Dir))*Speed)
+  
 }
 
 
@@ -79,13 +85,13 @@ wind_data <- read.table(wind_file, sep = ",", skip = 9) %>%
 #' 
 #' 
 addParams <- function(race_data, params){
+  
 race_data_with_params <- race_data %>% 
-  group_by(race_number) %>%
-  mutate(Discipline = params$Discipline[params$race_number == unique(race_number)],
-         Date = params$Date[params$race_number == unique(race_number)],
-         Start_time = params$Start_time[params$race_number == unique(race_number)],
-         Water_temp = params$water_temperature[params$race_number == unique(race_number)]) %>% 
-  ungroup()
+  left_join(params %>% select(!c(Distance,Wind_speed,Wind_direction, Wind_station_turned_on_time)), by="race_number") 
+
+# %>% 
+#   mutate(Date = as.Date(Date))
+
 }
 
 #' Function to perform split time corrections
@@ -111,62 +117,69 @@ correctSplitTime <- function(splits_dataframe_with_params,wind_data, cor_factor)
     ungroup()
   
   for (i in 1:nrow(corrected_split_times)) {
-    if (!is.na(corrected_split_times$split_time[i])) {
+    print(paste0("Race: ", corrected_split_times$race_number[i], "; Country: " ,corrected_split_times$Country[i], "; Split: ", corrected_split_times$split_distance[i], " m"))
+
+    if (!is.na(corrected_split_times$split_time[i]) & corrected_split_times$split_time[i] != 0) {
       
-      if (corrected_split_times$split_start_time[i] >= wind_data$Time_adj[1] & corrected_split_times$split_finish_time[i] <= wind_data$Time_adj[nrow(wind_data)]){
+      if (corrected_split_times$Date[i] %in% wind_data$Date) {
         
-        race_wind <- wind_data %>% filter(Time_adj >= corrected_split_times$split_start_time[i] & Time_adj <= corrected_split_times$split_finish_time[i])
+        wind_race_date <- wind_data %>% filter(Date == corrected_split_times$Date[i])
         
-        EW_Average <- mean(race_wind$EW_Vector) #Average in Radians
-        
-        NS_Average <- mean(race_wind$NS_Vector) #Average in Radians
-        
-        wind_speed <- sqrt(EW_Average^2 + NS_Average^2) 
-        
-        corrected_split_times$wind_speed[i] <- wind_speed
-        
-        Atan2Dir <- atan2(EW_Average, NS_Average) 
-        
-        wind_direction <- RadToDeg(Atan2Dir)
-        
-        if (wind_direction < 0) { wind_direction <- wind_direction + 360 }
-        
-        corrected_split_times$wind_direction[i] <- wind_direction
-        
-        
-        if (grepl("(K1|KL)",corrected_split_times$Discipline[i], ignore.case=T)) {
-          row_index <- which.min(abs(as.data.frame(t(cor_factor$K1[,1])) - wind_speed))
-          col_index <- which.min(abs(cor_factor$K1[1,] - wind_direction))
-          wind_cor_factor <- cor_factor$K1[row_index,col_index]/(1000/corrected_split_times$distance[i])}
-        
-        else if (grepl("K2",corrected_split_times$Discipline[i], ignore.case=T)) {
-          row_index <- which.min(abs(as.data.frame(t(cor_factor$K2[,1])) - wind_speed))
-          col_index <- which.min(abs(cor_factor$K2[1,] - wind_direction))
-          wind_cor_factor <- cor_factor$K2[row_index,col_index]/(1000/ corrected_split_times$distance[i])}
-        
-        else if (grepl("K4",corrected_split_times$Discipline[i], ignore.case=T)) {
-          row_index <- which.min(abs(as.data.frame(t(cor_factor$K4[,1])) - wind_speed))
-          col_index <- which.min(abs(cor_factor$K4[1,] - wind_direction))
-          wind_cor_factor <- cor_factor$K4[row_index,col_index]/(1000/corrected_split_times$distance[i])}
-        
-        else if (grepl("(C1|VL)",corrected_split_times$Discipline[i], ignore.case=T)) {
-          row_index <-  which.min(abs(as.data.frame(t(cor_factor$C1[,1])) - wind_speed))
-          col_index <- which.min(abs(cor_factor$C1[1,] - wind_direction)) 
-          wind_cor_factor <- cor_factor$C1[row_index,col_index]/(1000/corrected_split_times$distance[i])}
-        
-        else if (grepl("C2",corrected_split_times$Discipline[i], ignore.case=T)) {
-          row_index <-  which.min(abs(as.data.frame(t(cor_factor$C2[,1])) - wind_speed))
-          col_index <- which.min(abs(cor_factor$C2[1,] - wind_direction)) 
-          wind_cor_factor <- cor_factor$C2[row_index,col_index]/(1000/corrected_split_times$distance[i])}
-        
-        water_cor_factor <- corrected_split_times$distance[i]/corrected_split_times$split_velocity[i]*(corrected_split_times$Water_temp[i] - 22.5)*0.0018
-        
-        Total_cor <- wind_cor_factor[1,1] + water_cor_factor
-        
-        Corr_time <- Total_cor + corrected_split_times$split_time[i]
-        
-        corrected_split_times$Total_cor_split[i] <- Total_cor
-        corrected_split_times$Corrected_split_time[i] <- Corr_time
+        if (corrected_split_times$split_start_time[i] >= wind_race_date$Time_adj[1] & corrected_split_times$split_finish_time[i] <= wind_race_date$Time_adj[nrow(wind_race_date)]){
+          
+          race_wind <- wind_race_date %>% filter(Time_adj >= corrected_split_times$split_start_time[i] & Time_adj <= corrected_split_times$split_finish_time[i])
+          
+          EW_Average <- mean(race_wind$EW_Vector) #Average in Radians
+          
+          NS_Average <- mean(race_wind$NS_Vector) #Average in Radians
+          
+          wind_speed <- sqrt(EW_Average^2 + NS_Average^2) 
+          
+          corrected_split_times$wind_speed[i] <- wind_speed
+          
+          Atan2Dir <- atan2(EW_Average, NS_Average) 
+          
+          wind_direction <- RadToDeg(Atan2Dir)
+          
+          if (wind_direction < 0) { wind_direction <- wind_direction + 360 }
+          
+          corrected_split_times$wind_direction[i] <- wind_direction
+          
+          
+          if (grepl("(K1|KL)",corrected_split_times$Discipline[i], ignore.case=T)) {
+            row_index <- which.min(abs(as.data.frame(t(cor_factor$K1[,1])) - wind_speed))
+            col_index <- which.min(abs(cor_factor$K1[1,] - wind_direction))
+            wind_cor_factor <- cor_factor$K1[row_index,col_index]/(1000/corrected_split_times$distance[i])}
+          
+          else if (grepl("K2",corrected_split_times$Discipline[i], ignore.case=T)) {
+            row_index <- which.min(abs(as.data.frame(t(cor_factor$K2[,1])) - wind_speed))
+            col_index <- which.min(abs(cor_factor$K2[1,] - wind_direction))
+            wind_cor_factor <- cor_factor$K2[row_index,col_index]/(1000/ corrected_split_times$distance[i])}
+          
+          else if (grepl("K4",corrected_split_times$Discipline[i], ignore.case=T)) {
+            row_index <- which.min(abs(as.data.frame(t(cor_factor$K4[,1])) - wind_speed))
+            col_index <- which.min(abs(cor_factor$K4[1,] - wind_direction))
+            wind_cor_factor <- cor_factor$K4[row_index,col_index]/(1000/corrected_split_times$distance[i])}
+          
+          else if (grepl("(C1|VL)",corrected_split_times$Discipline[i], ignore.case=T)) {
+            row_index <-  which.min(abs(as.data.frame(t(cor_factor$C1[,1])) - wind_speed))
+            col_index <- which.min(abs(cor_factor$C1[1,] - wind_direction)) 
+            wind_cor_factor <- cor_factor$C1[row_index,col_index]/(1000/corrected_split_times$distance[i])}
+          
+          else if (grepl("C2",corrected_split_times$Discipline[i], ignore.case=T)) {
+            row_index <-  which.min(abs(as.data.frame(t(cor_factor$C2[,1])) - wind_speed))
+            col_index <- which.min(abs(cor_factor$C2[1,] - wind_direction)) 
+            wind_cor_factor <- cor_factor$C2[row_index,col_index]/(1000/corrected_split_times$distance[i])}
+          
+          water_cor_factor <- corrected_split_times$distance[i]/corrected_split_times$split_velocity[i]*(corrected_split_times$Water_temp[i] - 22.5)*0.0018
+          
+          Total_cor <- wind_cor_factor[1,1] + water_cor_factor
+          
+          Corr_time <- Total_cor + corrected_split_times$split_time[i]
+          
+          corrected_split_times$Total_cor_split[i] <- Total_cor
+          corrected_split_times$Corrected_split_time[i] <- Corr_time
+        }
       }
     }
   }
@@ -199,67 +212,74 @@ correctRaceTime <- function(processed_race_data_with_params,wind_data, cor_facto
            AFT = NA_real_)
   
   for (i in 1:nrow(corrected_race_times)) {
-    if (!is.na(corrected_race_times$Race_time[i])) {
+    
+    if (!is.na(corrected_race_times$Race_time[i]) & corrected_race_times$Race_time[i] != 0) {
       
-      if (corrected_race_times$Start_time[i] >= wind_data$Time_adj[1] & corrected_race_times$Finish_time[i] <= wind_data$Time_adj[nrow(wind_data)]){
+      if (corrected_race_times$Date[i] %in% wind_data$Date) {
         
-        race_wind <- wind_data %>% filter(Time_adj >= corrected_race_times$Start_time[i] & Time_adj <= corrected_race_times$Finish_time[i])
+        wind_race_date <- wind_data %>% filter(Date == corrected_race_times$Date[i])
         
-        EW_Average <- mean(race_wind$EW_Vector) #Average in Radians
-        
-        NS_Average <- mean(race_wind$NS_Vector) #Average in Radians
-        
-        wind_speed <- sqrt(EW_Average^2 + NS_Average^2) 
-        
-        corrected_race_times$wind_speed[i] <- wind_speed
-        
-        Atan2Dir <- atan2(EW_Average, NS_Average) 
-        
-        wind_direction <- RadToDeg(Atan2Dir)
-        
-        if (wind_direction < 0) { wind_direction <- wind_direction + 360 }
-        
-        corrected_race_times$wind_direction[i] <- wind_direction
-        
-        
-        if (grepl("(K1|KL)",corrected_race_times$Discipline[i], ignore.case=T)) {
-          row_index <- which.min(abs(as.data.frame(t(cor_factor$K1[,1])) - wind_speed))
-          col_index <- which.min(abs(cor_factor$K1[1,] - wind_direction))
-          wind_cor_factor <- cor_factor$K1[row_index,col_index]/(1000/corrected_race_times$Distance[i])}
-        
-        else if (grepl("K2",corrected_race_times$Discipline[i], ignore.case=T)) {
-          row_index <- which.min(abs(as.data.frame(t(cor_factor$K2[,1])) - wind_speed))
-          col_index <- which.min(abs(cor_factor$K2[1,] - wind_direction))
-          wind_cor_factor <- cor_factor$K2[row_index,col_index]/(1000/ corrected_race_times$Distance[i])}
-        
-        else if (grepl("K4",corrected_race_times$Discipline[i], ignore.case=T)) {
-          row_index <- which.min(abs(as.data.frame(t(cor_factor$K4[,1])) - wind_speed))
-          col_index <- which.min(abs(cor_factor$K4[1,] - wind_direction))
-          wind_cor_factor <- cor_factor$K4[row_index,col_index]/(1000/corrected_race_times$Distance[i])}
-        
-        else if (grepl("(C1|VL)",corrected_race_times$Discipline[i], ignore.case=T)) {
-          row_index <-  which.min(abs(as.data.frame(t(cor_factor$C1[,1])) - wind_speed))
-          col_index <- which.min(abs(cor_factor$C1[1,] - wind_direction)) 
-          wind_cor_factor <- cor_factor$C1[row_index,col_index]/(1000/corrected_race_times$Distance[i])}
-        
-        else if (grepl("C2",corrected_race_times$Discipline[i], ignore.case=T)) {
-          row_index <-  which.min(abs(as.data.frame(t(cor_factor$C2[,1])) - wind_speed))
-          col_index <- which.min(abs(cor_factor$C2[1,] - wind_direction)) 
-          wind_cor_factor <- cor_factor$C2[row_index,col_index]/(1000/corrected_race_times$Distance[i])}
-        
-        water_cor_factor <- corrected_race_times$Distance[i]/corrected_race_times$Avg_velocity[i]*(corrected_race_times$Water_temp[i] - 22.5)*0.0018
-        
-        Total_cor <- wind_cor_factor[1,1] + water_cor_factor
-        
-        Corr_time <- Total_cor + corrected_race_times$Race_time[i]
-        
-        corrected_race_times$Total_cor[i] <- Total_cor
-        corrected_race_times$Corrected_time[i] <- Corr_time
-        
-        if (paste(corrected_race_times$Discipline[i], corrected_race_times$Distance[i]) %in% paste(GMT_AFT$Discipline, GMT_AFT$Distance)) {
-          corrected_race_times$GMT[i] <- GMT_AFT$GMT[GMT_AFT$Discipline == corrected_race_times$Discipline[i] & GMT_AFT$Distance == corrected_race_times$Distance[i] & GMT_AFT$Classification == "SR"]
-          corrected_race_times$AFT[i] <- GMT_AFT$GMT[GMT_AFT$Discipline == corrected_race_times$Discipline[i] & GMT_AFT$Distance == corrected_race_times$Distance[i] & GMT_AFT$Classification == "SR"]}
+        if (corrected_race_times$Start_time[i] >= wind_race_date$Time_adj[1] & corrected_race_times$Finish_time[i] <= wind_race_date$Time_adj[nrow(wind_race_date)]){
+          
+          race_wind <- wind_race_date %>% filter(Time_adj >= corrected_race_times$Start_time[i] & Time_adj <= corrected_race_times$Finish_time[i])
+          
+          EW_Average <- mean(race_wind$EW_Vector) #Average in Radians
+          
+          NS_Average <- mean(race_wind$NS_Vector) #Average in Radians
+          
+          wind_speed <- sqrt(EW_Average^2 + NS_Average^2) 
+          
+          corrected_race_times$wind_speed[i] <- wind_speed
+          
+          Atan2Dir <- atan2(EW_Average, NS_Average) 
+          
+          wind_direction <- RadToDeg(Atan2Dir)
+          
+          if (wind_direction < 0) { wind_direction <- wind_direction + 360 }
+          
+          corrected_race_times$wind_direction[i] <- wind_direction
+          
+          
+          if (grepl("(K1|KL)",corrected_race_times$Discipline[i], ignore.case=T)) {
+            row_index <- which.min(abs(as.data.frame(t(cor_factor$K1[,1])) - wind_speed))
+            col_index <- which.min(abs(cor_factor$K1[1,] - wind_direction))
+            wind_cor_factor <- cor_factor$K1[row_index,col_index]/(1000/corrected_race_times$Distance[i])}
+          
+          else if (grepl("K2",corrected_race_times$Discipline[i], ignore.case=T)) {
+            row_index <- which.min(abs(as.data.frame(t(cor_factor$K2[,1])) - wind_speed))
+            col_index <- which.min(abs(cor_factor$K2[1,] - wind_direction))
+            wind_cor_factor <- cor_factor$K2[row_index,col_index]/(1000/ corrected_race_times$Distance[i])}
+          
+          else if (grepl("K4",corrected_race_times$Discipline[i], ignore.case=T)) {
+            row_index <- which.min(abs(as.data.frame(t(cor_factor$K4[,1])) - wind_speed))
+            col_index <- which.min(abs(cor_factor$K4[1,] - wind_direction))
+            wind_cor_factor <- cor_factor$K4[row_index,col_index]/(1000/corrected_race_times$Distance[i])}
+          
+          else if (grepl("(C1|VL)",corrected_race_times$Discipline[i], ignore.case=T)) {
+            row_index <-  which.min(abs(as.data.frame(t(cor_factor$C1[,1])) - wind_speed))
+            col_index <- which.min(abs(cor_factor$C1[1,] - wind_direction)) 
+            wind_cor_factor <- cor_factor$C1[row_index,col_index]/(1000/corrected_race_times$Distance[i])}
+          
+          else if (grepl("C2",corrected_race_times$Discipline[i], ignore.case=T)) {
+            row_index <-  which.min(abs(as.data.frame(t(cor_factor$C2[,1])) - wind_speed))
+            col_index <- which.min(abs(cor_factor$C2[1,] - wind_direction)) 
+            wind_cor_factor <- cor_factor$C2[row_index,col_index]/(1000/corrected_race_times$Distance[i])}
+          
+          water_cor_factor <- corrected_race_times$Distance[i]/corrected_race_times$Avg_velocity[i]*(corrected_race_times$Water_temp[i] - 22.5)*0.0018
+          
+          Total_cor <- wind_cor_factor[1,1] + water_cor_factor
+          
+          Corr_time <- Total_cor + corrected_race_times$Race_time[i]
+          
+          corrected_race_times$Total_cor[i] <- Total_cor
+          corrected_race_times$Corrected_time[i] <- Corr_time
+        }
       }
+      
+      if (paste(corrected_race_times$Discipline[i], corrected_race_times$Distance[i]) %in% paste(GMT_AFT$Discipline, GMT_AFT$Distance)) {
+        corrected_race_times$GMT[i] <- GMT_AFT$GMT[GMT_AFT$Discipline == corrected_race_times$Discipline[i] & GMT_AFT$Distance == corrected_race_times$Distance[i] & GMT_AFT$Classification == "SR"]
+        corrected_race_times$AFT[i] <- GMT_AFT$GMT[GMT_AFT$Discipline == corrected_race_times$Discipline[i] & GMT_AFT$Distance == corrected_race_times$Distance[i] & GMT_AFT$Classification == "SR"]}
+      
     }
   }
   return(corrected_race_times)
@@ -334,14 +354,12 @@ processed_race_data <- lapply(files, extractOmegaGPSData) %>%
   bind_rows()
 
 # Input wind device start time and wind file path
-start_time <- params$wind_station_turned_on_time[1]
-wind_file <- "C:/Users/alex/Dropbox/MTL Admos and Spin Files/Wind data/Wind WCup May 12 929 start 1458 end.txt"
-
-#Add fractional seconds to start time if user does not
-if (!grepl("\\.",start_time)) {start_time = paste0(start_time,".0")}
+wind_directory <- "C:/Users/alex/Dropbox/MTL Admos and Spin Files/Wind data/Testing/"
+wind_files <- Sys.glob(paste0(wind_directory, "*.txt"))
 
 #read and process wind data
-wind_data <- extractWindData(wind_file, start_time)
+wind_data <- lapply(wind_files, function (x) extractWindData(x, params)) %>% 
+  bind_rows()
 
 # Summarise race data by 10m or 50m splits
 
