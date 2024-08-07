@@ -20,11 +20,8 @@ extractOmegaGPSData <- function(filename){
                           delim = ";", col_types = "nccnnccnnccnnccnnccnnccnnccnnccnnccnnccnn") %>% 
     drop_na(Distance) %>% 
     mutate_at(vars(contains("Stroke")), .funs = function(x) as.numeric(x)) %>% 
-    mutate_at(vars(contains("Stroke")), .funs = function(x){
-      case_when(x == 0 ~ NA, TRUE ~ x)
-    }
-    )
-  
+    mutate_at(vars(contains("Stroke"), contains("Speed")), .funs = function(x){
+      case_when(x == 0 ~ NA, TRUE ~ x)})
   
   if(!str_detect(last(names(race_data)), "Stroke")){
     race_data <- select(race_data, 1:last_col(1)) 
@@ -59,10 +56,10 @@ getSplitsTable <- function(race_GPS_data){
   if(race_distance == 200){
     splits <- group_by(race_GPS_data, race_number, Lane, Country, split10) %>% 
       summarise(split_cumtime = max(Time),
+                split_velocity = round(mean(Speed, na.rm = T),2),
                 split_SR = round(mean(SR, na.rm = T),0),
                 split_DPS = round(mean(DPS, na.rm = T),2)) %>% 
       mutate(split_time = round(as.numeric(split_cumtime)-lag(as.numeric(split_cumtime), default = 0),3),
-             split_velocity = 10 / split_time,
              split_cumtime = round(as.numeric(split_cumtime),3)) %>% 
       rename(split_distance = split10) %>% 
       mutate_all(.funs = function(x){
@@ -71,10 +68,10 @@ getSplitsTable <- function(race_GPS_data){
   } else {
     splits <- group_by(race_GPS_data, race_number, Lane, Country, split50) %>% 
       summarise(split_cumtime = max(Time),
+                split_velocity = round(mean(Speed, na.rm = T),2),
                 split_SR = round(mean(SR, na.rm = T),0),
                 split_DPS = round(mean(DPS, na.rm = T),2)) %>% 
       mutate(split_time = round(as.numeric(split_cumtime)-lag(as.numeric(split_cumtime), default = 0),3),
-             split_velocity = 50 / split_time,
              split_cumtime = round(as.numeric(split_cumtime),3)) %>% 
       rename(split_distance = split50) %>% 
       mutate_all(.funs = function(x){
@@ -89,9 +86,9 @@ getSplitsTable <- function(race_GPS_data){
 # Load data 
 
 # Input Competition Name and date (change manually before running script)
-competition_name <- "Paris2024 Olympics"
+competition_name <- "Paris2024_Olympics"
 competition_date <- "2024-08-06"
-directory <- "C:/Users/sgaudet/Downloads/Paris2024_GPSfiles/"
+directory <- "C:/Users/sgaudet/Dropbox/INS-Quebec/CKC/MTL Admos and Spin Files/Paris2024_GPSfiles/"
 
 files <- Sys.glob(paste0(directory, "*/*.csv"))
 
