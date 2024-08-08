@@ -87,7 +87,6 @@ getSplitsTable <- function(race_GPS_data){
 
 # Input Competition Name and date (change manually before running script)
 competition_name <- "Paris2024_Olympics"
-competition_date <- "2024-08-06"
 directory <- "C:/Users/sgaudet/Dropbox/INS-Quebec/CKC/MTL Admos and Spin Files/Paris2024_GPSfiles/"
 
 files <- Sys.glob(paste0(directory, "*/*.csv"))
@@ -96,6 +95,10 @@ files <- Sys.glob(paste0(directory, "*/*.csv"))
 processed_race_data <- lapply(files, extractOmegaGPSData) %>% 
   bind_rows()
 
+# Load race metadata
+params <- read_xlsx(paste0(directory, "Paris2024_metadata_and_conditions.xlsx")) %>% 
+  rename_with(~ gsub(" ", "_", .x, fixed = TRUE)) %>% 
+  mutate(across(where(is.POSIXct) & !Date, as_hms))
 
 # Summarise race data by 10m or 50m splits
 
@@ -118,11 +121,13 @@ summary_dataframe <- group_by(processed_race_data, race_number, Lane, Country) %
   group_by(race_number) %>% 
   mutate(race_rank = rank(total_time_sec),
          race_winning_time = min(total_time_sec, na.rm = T)) %>% 
-  ungroup() %>% 
-  mutate(Date = competition_date,
-         Event = competition_name)
+  ungroup()
 
-
+# Merge race data with metadata
+summary_dataframe <- left_join(summary_dataframe, params, by = c("race_number", "Distance")) %>% 
+  select(race_number, Lane, Date, Discipline, Distance, Country, Location, Event, Phase, Piece_ID, everything())
+splits_dataframe <- left_join(splits_dataframe, params, by = "race_number") %>% 
+  select(race_number, Lane,Date, Discipline, Distance, Country, Location, Event, Phase, Piece_ID, everything())
 
 write_csv(splits_dataframe, paste0(directory, "splitsDataframe_", competition_name, ".csv"), append = F)
 write_csv(summary_dataframe, paste0(directory,"summaryDataframe_", competition_name, ".csv"), append = F)
